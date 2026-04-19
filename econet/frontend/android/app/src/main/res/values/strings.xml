@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">EcoNet</string>
+    <string name="title_activity_main">EcoNet</string>
+    <string name="package_name">com.econet.app</string>
+    <string name="custom_url_scheme">com.econet.app</string>
+</resources>
