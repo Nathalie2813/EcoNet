@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import CarteStat from "../components/CarteStat";
 import Graphique from "../components/Graphique";
 
-// 🧠 ALGORITHME
+// algo
 const calculerMeilleurMoment = (data: number[]): string => {
   if (data.length === 0) return "Pas de données";
 
@@ -20,15 +20,51 @@ const calculerMeilleurMoment = (data: number[]): string => {
 
 export default function Dashboard() {
 
-  // 📊 STATE
+  // user (cloud)
+  const USER = localStorage.getItem("user") || "guest";
+
+  // limite
+  const LIMITE_MENSUELLE = 1000;
+
+  // State
   const [vitesse, setVitesse] = useState<string>("Calcul...");
   const [historique, setHistorique] = useState<number[]>(() => {
     const stored = localStorage.getItem("econet_data");
     return stored ? JSON.parse(stored) : [];
   });
 
-  // 📶 TEST VITESSE
-// 📶 TEST VITESSE (Garde celui-là intact !)
+  // notification
+  const notifier = (message: string) => {
+    if (!("Notification" in window)) return;
+
+    if (Notification.permission === "granted") {
+      new Notification(message);
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          new Notification(message);
+        }
+      });
+    }
+  };
+
+  // save cloud
+  const sauvegarderCloud = async (data: number[]) => {
+    await fetch("http://localhost:5000/save", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user: USER,
+        data: data,
+      }),
+    }).catch((err) =>
+      console.error("Erreur Cloud:", err)
+    );
+  };
+
+  // test vitesse
   useEffect(() => {
     let isMounted = true;
 
@@ -53,52 +89,62 @@ export default function Dashboard() {
     return () => { isMounted = false };
   }, []);
 
-  // ☁️ CHARGEMENT DES DONNÉES CLOUD (Ajoute celui-ci ici !)
+  // load cloud
   useEffect(() => {
-    fetch("http://localhost:5000/data")
-      .then(res => res.json())
-      .then(data => {
-        // Si le serveur renvoie des données, on met à jour l'historique
+    fetch(`http://localhost:5000/data/${USER}`)
+      .then((res) => res.json())
+      .then((data) => {
         if (data && data.length > 0) {
           setHistorique(data);
-          // Optionnel : tu peux aussi mettre à jour le localStorage pour qu'il soit synchro
           localStorage.setItem("econet_data", JSON.stringify(data));
         }
       })
-      .catch(err => console.error("Erreur de connexion au serveur:", err));
+      .catch((err) =>
+        console.error("Erreur serveur:", err)
+      );
   }, []);
 
-  // ➕ AJOUT DATA
- const ajouterData = () => {
-   // eslint-disable-next-line react-hooks/purity
-  const nouvelleValeur = Math.floor(Math.random() * 100);
-  const nouveau = [...historique, nouvelleValeur];
+  // ajout data
+  const ajouterData = () => {
+    let base = 50;
+    const heure = new Date().getHours();
 
-  if (nouveau.length > 7) nouveau.shift();
+    if (heure >= 0 && heure <= 6) base = 10;
+    if (heure >= 7 && heure <= 12) base = 40;
+    if (heure >= 13 && heure <= 18) base = 70;
+    if (heure >= 19 && heure <= 23) base = 120;
 
-  // ✅ Calcul AVANT mise à jour
-  const total = nouveau.reduce((a, b) => a + b, 0);
-  const pourcentage = (total / 1000) * 100;
+    const variation = Math.random() * 30;
+    const nouvelleValeur = Math.floor(base + variation);
 
-  // 🔔 NOTIFICATION ICI
-  if (pourcentage >= 80) {
-    notifier("⚠️ Attention : tu approches la limite !");
-  }
+    const nouveau = [...historique, nouvelleValeur];
+    if (nouveau.length > 7) nouveau.shift();
 
-  setHistorique(nouveau);
-  localStorage.setItem("econet_data", JSON.stringify(nouveau));
+    setHistorique(nouveau);
+    localStorage.setItem("econet_data", JSON.stringify(nouveau));
 
-  sauvegarderCloud(nouveau);
-};
+    // save cloud
+    sauvegarderCloud(nouveau);
 
+    // notification
+    const total = nouveau.reduce((a, b) => a + b, 0);
+    const pourcentage = (total / LIMITE_MENSUELLE) * 100;
 
-  // 🔄 RESET
+    if (pourcentage >= 100) {
+      notifier("🔥 Limite dépassée !");
+    } else if (pourcentage >= 80) {
+      notifier("⚠️ Bientôt limite atteinte");
+    }
+  };
+
+  // reset
   const resetData = () => {
     localStorage.removeItem("econet_data");
     setHistorique([]);
+    sauvegarderCloud([]);
   };
 
-  // 🧠 LOGIQUES
+  // Logique
   const meilleurMoment = calculerMeilleurMoment(historique);
 
   const calculerAlerte = (data: number[]) => {
@@ -107,21 +153,19 @@ export default function Dashboard() {
     const moyenne = data.reduce((a, b) => a + b, 0) / data.length;
     const today = data[data.length - 1];
 
-    if (today > moyenne * 1.5) return "🔥 Consommation très élevée";
-    if (today > moyenne) return "⚠️ Consommation au-dessus";
-    return "✅ Consommation normale";
+    if (today > moyenne * 1.5) return "🔥 Très élevé";
+    if (today > moyenne) return "⚠️ Élevé";
+    return "✅ Normal";
   };
 
   const alerte = calculerAlerte(historique);
 
-  // 📅 LIMITE
-  const LIMITE_MENSUELLE = 1000;
   const total = historique.reduce((a, b) => a + b, 0);
   const pourcentage = (total / LIMITE_MENSUELLE) * 100;
 
   const messageLimite = () => {
-    if (pourcentage >= 100) return "🔥 Limite dépassée !";
-    if (pourcentage >= 80) return "⚠️ Bientôt limite atteinte";
+    if (pourcentage >= 100) return "🔥 Limite dépassée";
+    if (pourcentage >= 80) return "⚠️ Attention limite";
     return "✅ OK";
   };
 
@@ -134,72 +178,40 @@ export default function Dashboard() {
     return (total + moyenne * joursRestants).toFixed(0) + " MB";
   };
 
-  // 📦 DATA UI
   const data = {
     today: total + " MB",
   };
 
-const notifier = (message: string) => {
-  if (!("Notification" in window)) return;
-
-  if (Notification.permission === "granted") {
-    new Notification(message);
-  } else if (Notification.permission !== "denied") {
-    Notification.requestPermission().then(permission => {
-      if (permission === "granted") {
-        new Notification(message);
-      }
-    });
-  }
-};
-
-const sauvegarderCloud = async (data: number[]) => {
-  await fetch("http://localhost:5000/save", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(data)
-  });
-};
-
-  // 🖥️ UI
+  // UI
   return (
-    <div style={{
-      padding: "20px",
-      maxWidth: "400px",
-      margin: "auto"
-    }}>
+  <div style={{
+    padding: "20px",
+    maxWidth: "420px",
+    margin: "auto",
+    background: "#020617",
+    minHeight: "100vh",
+    color: "white"
+  }}>
       <h1>EcoNet Dashboard</h1>
 
-      {/* 📊 STATS */}
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "15px",
-        marginTop: "20px"
-      }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "15px", marginTop: "20px" }}>
         <CarteStat titre="Data aujourd'hui" valeur={data.today} />
         <CarteStat titre="Vitesse" valeur={vitesse} />
         <CarteStat titre="Alerte" valeur={alerte} />
       </div>
 
-      {/* 📈 GRAPHIQUE */}
       <Graphique data={historique} />
 
-      {/* 🧠 RECO */}
       <p style={{ marginTop: "15px" }}>
         📥 Meilleur moment : {meilleurMoment}
       </p>
 
-      {/* 📅 INFOS */}
       <div style={{ marginTop: "15px", textAlign: "center" }}>
-        <p>📅 Total : {total} / {LIMITE_MENSUELLE} MB</p>
+        <p>📅 {total} / {LIMITE_MENSUELLE} MB</p>
         <p>📊 {pourcentage.toFixed(1)}%</p>
         <p>{messageLimite()}</p>
         <p>📈 Prévision : {prediction()}</p>
 
-        {/* barre */}
         <div style={{
           height: "10px",
           background: "#ddd",
@@ -208,28 +220,24 @@ const sauvegarderCloud = async (data: number[]) => {
           marginTop: "10px"
         }}>
           <div style={{
-            width: `${pourcentage}%`,
+            width: `${Math.min(pourcentage, 100)}%`,
             background: pourcentage > 80 ? "red" : "green",
             height: "100%"
           }} />
         </div>
       </div>
 
-      {/* ➕ */}
       <button onClick={ajouterData} style={btnGreen}>
         Ajouter consommation
       </button>
 
-      {/* 🔄 */}
       <button onClick={resetData} style={btnRed}>
         Reset data
       </button>
-
     </div>
   );
 }
 
-// 🎨 styles boutons
 const btnGreen = {
   marginTop: "10px",
   padding: "10px",
@@ -238,10 +246,10 @@ const btnGreen = {
   background: "#22c55e",
   color: "white",
   cursor: "pointer",
-  width: "100%"
+  width: "100%",
 };
 
 const btnRed = {
   ...btnGreen,
-  background: "red"
+  background: "red",
 };
